@@ -1,6 +1,8 @@
 pyiso
 ============
 
+* Updated so the install works. Clone this repository then do a manual installation in terminal with: python setup.py install
+
 [![Build Status](https://travis-ci.org/WattTime/pyiso.svg?branch=master)](https://travis-ci.org/WattTime/pyiso)
 [![Coverage Status](https://coveralls.io/repos/WattTime/pyiso/badge.svg?branch=master)](https://coveralls.io/r/WattTime/pyiso?branch=master)
 [![PyPI version](https://badge.fury.io/py/pyiso.svg)](https://badge.fury.io/py/pyiso)

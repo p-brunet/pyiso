@@ -1,4 +1,4 @@
-import imp
+import importlib.util
 import logging
 import os.path
 import sys
@@ -62,24 +62,21 @@ def client_factory(client_name, **kwargs):
     try:
         client_vals = BALANCING_AUTHORITIES[client_key]
         module_name = client_vals['module']
-
         class_name = client_vals['class']
     except KeyError:
         raise ValueError(error_msg)
 
-    # find module
-    try:
-        fp, pathname, description = imp.find_module(module_name, [dir_name])
-    except ImportError:
+    # find and load module
+    module_path = os.path.join(dir_name, f"{module_name}.py")
+    if not os.path.exists(module_path):
         raise ValueError(error_msg)
 
-    # load
-    try:
-        mod = imp.load_module(module_name, fp, pathname, description)
-    finally:
-        # Since we may exit via an exception, close fp explicitly.
-        if fp:
-            fp.close()
+    spec = importlib.util.spec_from_file_location(module_name, module_path)
+    if spec is None:
+        raise ValueError(error_msg)
+
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
 
     # instantiate class
     try:
