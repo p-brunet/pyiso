@@ -25,7 +25,7 @@ class ISONEClient(BaseClient):
     }
 
     locations = {
-        'INTERNALHUB': 4000,
+        #'INTERNALHUB': 4000,
         'MAINE': 4001,
         'NEWHAMPSHIRE': 4002,
         'VERMONT': 4003,
@@ -34,6 +34,15 @@ class ISONEClient(BaseClient):
         'SEMASS': 4006,
         'WCMASS': 4007,
         'NEMASSBOST': 4008,
+    }
+
+    external_transmissions = {
+        'SALBRYNB345' : 4010,
+        'ROSETON345' : 4011,
+        'HQ_P1_P2345' : 4012,
+        'HQHIGATE120' : 4013,
+        'SHOREHAM138' : 4014,
+        'NRTHPORT138' : 4017
     }
 
     def __init__(self, *args, **kwargs):
@@ -105,6 +114,101 @@ class ISONEClient(BaseClient):
 
         # return
         return self.serialize_faster(df, drop_index=True)
+    
+    def get_load_id(self, location_id, latest=False, start_at=False, end_at=False,
+                 forecast=False, **kwargs):
+        # set args
+        self.handle_options(data='load_id', location_id = location_id, latest=latest, forecast=forecast,
+                            start_at=start_at, end_at=end_at, **kwargs)
+
+        # set up storage
+        raw_data = []
+
+        # collect raw data
+        for endpoint in self.request_endpoints(location_id=location_id):
+            # carry out request
+            data = self.fetch_data(endpoint, self.auth)
+
+            # pull out data
+            try:
+                raw_data += self.parse_json_load_id_data(data)
+            except ValueError as e:
+                LOGGER.warn(e)
+                continue
+
+        # parse data
+        try:
+            df = self._parse_json(raw_data)
+        except ValueError:
+            return []
+        df = self.slice_times(df)
+
+        # return
+        return self.serialize_faster(df, drop_index=True)
+    
+    def get_lmp_id(self, location_id, latest=False, start_at=False, end_at=False,
+                 forecast=False, **kwargs):
+        # set args
+        self.handle_options(data='lmp_id', location_id= location_id, latest=latest, forecast=forecast,
+                            start_at=start_at, end_at=end_at, **kwargs)
+
+        # set up storage
+        raw_data = []
+
+        # collect raw data
+        for endpoint in self.request_endpoints(location_id=location_id):
+            # carry out request
+            data = self.fetch_data(endpoint, self.auth)
+
+            # pull out data
+            try:
+                raw_data += self.parse_json_lmp_id_data(data)
+            except ValueError as e:
+                LOGGER.warn(e)
+                continue
+
+        # parse data
+        try:
+            df = self._parse_json(raw_data)
+        except ValueError:
+            return []
+        df = self.slice_times(df)
+
+        # return
+        return self.serialize_faster(df, drop_index=True)
+    
+    def get_transmission_id(self, location_id, latest=False, start_at=False, end_at=False,
+                          forecast=False,**kwargs):
+        
+        # set args
+        self.handle_options(data='trans_id', location_id= location_id, latest=latest, forecast=forecast,
+                            start_at=start_at, end_at=end_at, **kwargs)
+
+        # set up storage
+        raw_data = []
+
+        # collect raw data
+        for endpoint in self.request_endpoints(location_id=location_id):
+            # carry out request
+            data = self.fetch_data(endpoint, self.auth)
+
+            # pull out data
+            try:
+                raw_data += self.parse_json_trans_id_data(data)
+            except ValueError as e:
+                LOGGER.warn(e)
+                continue
+
+        # parse data
+        try:
+            df = self._parse_json(raw_data)
+        except ValueError:
+            return []
+        df = self.slice_times(df)
+
+        # return
+        return self.serialize_faster(df, drop_index=True)
+        
 
     def handle_options(self, **kwargs):
         # default options
@@ -134,7 +238,20 @@ class ISONEClient(BaseClient):
                 else:
                     self.options['frequency'] = self.FREQUENCY_CHOICES.fivemin
 
-    def request_endpoints(self, location_id=None):
+        # handle location
+        if not self.options.get('location_id'):
+            self.options['location'] = ''
+        else:
+           self.options['location'] = '/location/'
+        
+        # handle freq report
+        if not self.options.get('freq_report'):
+            self.options['freq_report'] = 'day'
+        else:
+            self.options['freq_report'] = 'month'
+        
+
+    def request_endpoints(self, location_id=''):
         """Returns a list of endpoints to query, based on handled options"""
         # base endpoint
         ext = ''
@@ -145,6 +262,13 @@ class ISONEClient(BaseClient):
                 base_endpoint = 'hourlyloadforecast'
             else:
                 base_endpoint = 'fiveminutesystemload'
+        elif self.options['data'] == 'load_id':
+            base_endpoint = 'combinedhourlydemand'
+            self.options['monthly'] = True
+        elif self.options['data'] == 'lmp_id':
+            base_endpoint = 'hourlylmp/da/final'
+        elif self.options['data'] == 'trans_id':
+            base_endpoint = 'fiveminuteexternalflow'
         else:
             raise ValueError('Data type not recognized %s' % self.options['data'])
 
@@ -156,10 +280,14 @@ class ISONEClient(BaseClient):
             request_endpoints.append('/%s/current%s.json' % (base_endpoint, ext))
 
         elif self.options['start_at'] and self.options['end_at']:
-            for date in self.dates():
-                date_str = date.strftime('%Y%m%d')
-                request_endpoints.append('/%s/day/%s%s.json' % (base_endpoint, date_str, ext))
-
+            if self.options['freq_report']=='month':
+                for date in self.months():
+                    date_str = date.strftime('%Y%m')
+                    request_endpoints.append('/%s/%s/%s%s%s%s.json' % (base_endpoint, self.options['freq_report'], date_str, ext, self.options['location'], location_id))
+            else:
+                for date in self.dates():
+                    date_str = date.strftime('%Y%m%d')
+                    request_endpoints.append('/%s/%s/%s%s%s%s.json' % (base_endpoint, self.options['freq_report'], date_str, ext, self.options['location'], location_id))
         else:
             msg = 'Either latest or forecast must be True, or start_at and end_at must both be provided.'
             raise ValueError(msg)
@@ -189,6 +317,51 @@ class ISONEClient(BaseClient):
                 return data['FiveMinSystemLoads']['FiveMinSystemLoad']
         except (KeyError, TypeError):
             raise ValueError('Could not parse ISONE load data %s' % data)
+        
+    def parse_json_load_id_data(self, data):
+        """
+        Pull approriate keys from json data set.
+        Raise ValueError if parser fails.
+        """
+        try:
+            if self.options.get('latest'):
+                return data['FiveMinSystemLoad']
+            elif self.options['market'] == self.MARKET_CHOICES.dam:
+                return data['HourlyLoadForecasts']['HourlyLoadForecast']
+            else:
+                return data['CombinedHourlyDemands']['CombinedHourlyDemand']
+        except (KeyError, TypeError):
+            raise ValueError('Could not parse ISONE load data %s' % data)
+        
+    def parse_json_lmp_id_data(self, data):
+        """
+        Pull approriate keys from json data set.
+        Raise ValueError if parser fails.
+        """
+        try:
+            if self.options.get('latest'):
+                return data['FiveMinSystemLoad']
+            elif self.options['market'] == self.MARKET_CHOICES.dam:
+                return data['HourlyLoadForecasts']['HourlyLoadForecast']
+            else:
+                return data['HourlyLmps']['HourlyLmp']
+        except (KeyError, TypeError):
+            raise ValueError('Could not parse ISONE load data %s' % data)  
+        
+    def parse_json_trans_id_data(self, data):
+        """
+        Pull approriate keys from json data set.
+        Raise ValueError if parser fails.
+        """
+        try:
+            if self.options.get('latest'):
+                return data['FiveMinSystemLoad']
+            elif self.options['market'] == self.MARKET_CHOICES.dam:
+                return data['HourlyLoadForecasts']['HourlyLoadForecast']
+            else:
+                return data['ExternalFlows']['ExternalFlow']
+        except (KeyError, TypeError):
+            raise ValueError('Could not parse ISONE load data %s' % data)   
 
     def _parse_json(self, json):
         if len(json) == 0:
@@ -217,7 +390,7 @@ class ISONEClient(BaseClient):
 
         # drop unwanted columns
         df.drop(['BeginDate',
-                 'CongestionComponent', 'EnergyComponent', 'LossComponent', 'Location',
+                 'CongestionComponent', 'EnergyComponent', 'LossComponent',
                  'FuelCategory', 'MarginalFlag', 'FuelCategoryRollup',
                  'NetLoadMw', 'CreationDate', 'NativeLoad', 'ArdDemand',
                  ],

@@ -4,6 +4,7 @@ import warnings
 import zipfile
 from collections import namedtuple
 from datetime import datetime, timedelta
+from dateutil.relativedelta import relativedelta
 from io import StringIO, BytesIO
 from time import sleep
 
@@ -522,6 +523,35 @@ class BaseClient(object):
 
         # return
         return dates
+    
+    def months(self):
+        """Returns a list of months in local time"""
+        # set up storage
+        months = []
+
+        # if latest, use date in local time
+        if self.options['latest']:
+            local_now = self.local_now()
+            if local_now.month() != (local_now - timedelta(minutes=30)).month():
+                months.append((local_now - timedelta(minutes=30)).month())
+            months.append(local_now.month())
+
+        # if start and end, use all dates in range
+        elif self.options['start_at'] and self.options['end_at']:
+            local_start = self.options['start_at'].astimezone(pytz.timezone(self.TZ_NAME))
+            local_end = self.options['end_at'].astimezone(pytz.timezone(self.TZ_NAME))
+            this_date = local_start.date()
+            while this_date <= local_end.date():
+                months.append(this_date)
+                this_date += relativedelta(months=1)
+
+        # have to have some sort of dates
+        else:
+            raise ValueError(
+                'Either latest must be True, or start_at and end_at must both be provided.')
+
+        # return
+        return months
 
     def _dst_active_hours_for_transition_day(self, local_dt_index):
         """
